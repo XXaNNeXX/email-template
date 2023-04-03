@@ -1,0 +1,200 @@
+Option Explicit
+
+Private Const x_Senden As Integer = 1
+
+Public Sub Email_btn()
+    
+    Dim sSubject As String
+    sSubject = ActiveWorkbook.Names("title").RefersToRange.Value2
+    
+    Dim sHTML As String
+    sHTML = ""
+    Dim bChange As Boolean
+    Dim sFontName As String
+    sFontName = ""
+    Dim sFontSize As String
+    sFontSize = ""
+    Dim bBold As Integer
+    bBold = 0
+    
+    Dim varChar
+    For Each varChar In Sheets("_Text").Shapes("Textfeld 1").TextFrame2.TextRange.Characters
+        bChange = False
+    
+        Dim char_Text As String
+        char_Text = varChar.Text
+        
+        Dim char_FontName As String
+        char_FontName = varChar.Font.Name
+        
+        Dim char_FontSize As String
+        char_FontSize = varChar.Font.Size
+    
+        Dim char_Bold As Integer
+        char_Bold = varChar.Font.Bold
+    
+        If Not sFontName Like char_FontName Then
+            bChange = True
+            sFontName = char_FontName
+        End If
+
+        If Not sFontSize Like char_FontSize Then
+            bChange = True
+            sFontSize = char_FontSize
+        End If
+        
+        If Not bBold Like char_Bold Then
+            bChange = True
+            bBold = char_Bold
+        End If
+    
+        char_Text = Replace(char_Text, vbCrLf, "<br>")
+        char_Text = Replace(char_Text, vbLf, "<br>")
+    
+        If bChange Then
+            sHTML = sHTML & "</span>"
+            sHTML = sHTML & vbCrLf & "<span style="""
+            sHTML = sHTML & "font-family:" & sFontName & ";"
+            sHTML = sHTML & "font-size:" & sFontSize & "pt;"
+            If bBold <> 0 Then
+                sHTML = sHTML & "font-weight: bold;"
+            Else
+                sHTML = sHTML & "font-weight: normal;"
+            End If
+            sHTML = sHTML & """>"
+        End If
+    
+        sHTML = sHTML & char_Text
+    Next
+    sHTML = sHTML & "</span>"
+        
+    Dim app_Outlook As Outlook.Application
+    Set app_Outlook = New Outlook.Application
+    Dim objEmail As Outlook.MailItem
+    
+    Dim ws As Worksheet
+    Set ws = ActiveSheet
+    
+    Dim Tabelle1 As ListObject
+    Set Tabelle1 = ws.ListObjects("Tabelle1")
+        
+    Dim sHeaders As String
+    sHeaders = ""
+    
+    Dim Cols As Integer
+    For Cols = 1 To Tabelle1.ListColumns.Count
+        Dim sHeader As String
+        sHeader = Tabelle1.Range(1, Cols).Value
+        sHeaders = sHeaders & ";" & sHeader
+    Next
+    sHeaders = Replace(sHeaders, ";", "", 1, 1)
+    Dim arrHeaders
+    arrHeaders = Split(sHeaders, ";")
+    
+    Dim email_Col As Integer
+    email_Col = get_Column("Email_To")
+    
+    Dim Rows As Integer
+    For Rows = 2 To Tabelle1.ListRows.Count
+        Dim xSenden As String
+        xSenden = Tabelle1.Range(Rows, x_Senden).Value
+        If xSenden Like "x" Then
+            Dim sAddress As String
+            sAddress = Tabelle1.Range(Rows, email_Col).Value
+            If sAddress Like "" Then Exit For
+            If sAddress Like "*@*.*" Then
+            
+                Dim sText As String
+                sText = sHTML
+                Dim sTitle As String
+                sTitle = sSubject
+            
+                Dim iCol As Integer
+                For iCol = 1 To Tabelle1.ListColumns.Count
+                    Dim sPlaceholder As String
+                    sPlaceholder = Tabelle1.Range(1, iCol)
+                    sPlaceholder = Trim(sPlaceholder)
+                    Dim sValue As String
+                    sValue = Tabelle1.Range(Rows, iCol)
+                    sValue = Trim(sValue)
+                    If Not sPlaceholder Like "" Then
+                        sText = Replace(sText, "[@" & sPlaceholder & "]", sValue, , , vbTextCompare)
+                        sTitle = Replace(sTitle, "[@" & sPlaceholder & "]", sValue, , , vbTextCompare)
+                    End If
+                Next
+                
+                Dim status_Send As String
+                status_Send = Send_Email_to_Address(sAddress, sTitle, sText)
+                Tabelle1.Range(Rows, 1).Value = status_Send
+                
+            End If
+        End If
+    Next
+    
+    Set app_Outlook = Nothing
+    Set objEmail = Nothing
+    
+End Sub
+
+Public Function Send_Email_to_Address(ByVal sAddress As String, ByVal sTitle As String, ByVal sText As String) As String
+    
+    On Error Resume Next
+    If sAddress Like "" Then
+        Send_Email_to_Address = "no: [Email_To] is empty"
+        Exit Function
+    End If
+    
+    Dim app_Outlook As Outlook.Application
+    Set app_Outlook = New Outlook.Application
+    
+    Dim objEmail As MailItem
+    Set objEmail = app_Outlook.CreateItem(olMailItem)
+        
+    objEmail.To = sAddress
+    objEmail.Subject = sTitle
+    objEmail.BodyFormat = 2
+    objEmail.HTMLBody = sText
+    
+    Dim sAutosend As String
+    sAutosend = ActiveWorkbook.Names("preview").RefersToRange.Text
+    If sAutosend Like "*Send*" Then
+        objEmail.Display False
+        objEmail.Send
+    Else
+        objEmail.Display True
+    End If
+    
+    Set objEmail = Nothing
+    Set app_Outlook = Nothing
+    
+    If Err.Number <> 0 Then
+        MsgBox "Error on Email=" & sAddress & vbCrLf & Err.Description & vbCrLf & "Check Syntax of Email-Address " & sAddress & vbCrLf, vbCritical, Err.Number & " Error on sending.."
+        Send_Email_to_Address = "no: " & Err.Description
+    Else
+        Send_Email_to_Address = "x"
+    End If
+    
+
+End Function
+
+Private Function get_Column(sFind_Header As String) As Integer
+
+    Dim Tabelle1 As ListObject
+    Set Tabelle1 = ActiveSheet.ListObjects("Tabelle1")
+    
+    Dim iReturn
+    iReturn = -1
+    
+    Dim Cols As Integer
+    For Cols = 1 To Tabelle1.ListColumns.Count
+        Dim sHeader As String
+        sHeader = Tabelle1.Range(1, Cols).Value
+        If sHeader Like sFind_Header Then
+            iReturn = Cols
+            Exit For
+        End If
+    Next
+    
+    get_Column = iReturn
+    
+End Function
